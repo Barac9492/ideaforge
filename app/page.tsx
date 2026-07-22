@@ -107,12 +107,26 @@ export default function Page() {
         </div>
       </header>
 
+      <section className="hero">
+        <h2>Don't brainstorm ideas. Forge them from who you are — then try to kill them.</h2>
+        <p>
+          Ideas are cheap; conviction is scarce. IdeaForge generates startup ideas anchored to <em>your</em> real
+          background, then runs any idea through the YC framework — so you leave knowing what to build, what to
+          validate, and what to walk away from.
+        </p>
+        <ol className="how">
+          <li><b>1 · Generate</b> ideas from your background <span>founder-market fit first</span></li>
+          <li className="arrow">→</li>
+          <li><b>2 · Pressure-test</b> any idea, honestly <span>and what to test next</span></li>
+        </ol>
+      </section>
+
       <div className="tabs">
         <button className={mode === "generate" ? "tab on" : "tab"} onClick={() => setMode("generate")}>
-          1 · Generate <span>ideas for you</span>
+          1 · Generate <span>ideas built from your background</span>
         </button>
         <button className={mode === "evaluate" ? "tab on" : "tab"} onClick={() => setMode("evaluate")}>
-          2 · Evaluate <span>pressure-test an idea</span>
+          2 · Evaluate <span>pressure-test an idea, no flattery</span>
         </button>
       </div>
 
