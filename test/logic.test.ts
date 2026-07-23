@@ -166,6 +166,24 @@ test("past or today deadline rejected; future accepted", () => {
 test("threshold must be > 0", () => {
   assert.equal(validatePrecommit({ experiment: "interview", threshold: 0, deadline: "2026-08-01", todayISO: TODAY }).ok, false);
 });
+test("experiment-specific threshold bounds + integer requirement", () => {
+  const V = (experiment: string, threshold: number) =>
+    validatePrecommit({ experiment, threshold, deadline: "2026-08-01", todayISO: TODAY }).ok;
+  // interview: integer 1..10
+  assert.equal(V("interview", 11), false); // over 10
+  assert.equal(V("interview", 5.5), false); // non-integer
+  assert.equal(V("interview", 10), true); // boundary
+  assert.equal(V("interview", 1), true); // boundary
+  // concierge: integer 1..5
+  assert.equal(V("concierge", 6), false); // over 5
+  assert.equal(V("concierge", 5), true); // boundary
+  // landing: 0 < t <= 100, decimals allowed
+  assert.equal(V("landing", 101), false); // over 100
+  assert.equal(V("landing", 100), true); // boundary
+  assert.equal(V("landing", 12.5), true); // decimal ok
+  // unknown experiment rejected
+  assert.equal(V("mystery", 3), false);
+});
 test("isDeadlinePassed", () => {
   assert.equal(isDeadlinePassed("2026-07-01", TODAY), true);
   assert.equal(isDeadlinePassed("2026-08-01", TODAY), false);

@@ -93,13 +93,30 @@ export function validatePrecommit(args: {
   todayISO: string;
 }): PrecommitCheck {
   const { experiment, threshold, deadline, todayISO } = args;
+
   if (!experiment) return { ok: false, message: "실험을 먼저 선택하세요." };
-  if (!(threshold > 0)) return { ok: false, message: "기준 값은 0보다 커야 합니다." };
+  if (experiment !== "interview" && experiment !== "concierge" && experiment !== "landing")
+    return { ok: false, message: "알 수 없는 실험입니다." };
+
+  if (!Number.isFinite(threshold) || !(threshold > 0))
+    return { ok: false, message: "기준 값은 0보다 커야 합니다." };
+
+  // Experiment-specific bounds (HTML max isn't enforcement — lock() is called directly).
+  if (experiment === "interview" || experiment === "concierge") {
+    const max = EXPERIMENT_META[experiment].targetSample; // 10 / 5
+    if (!Number.isInteger(threshold) || threshold < 1 || threshold > max)
+      return { ok: false, message: `기준은 1~${max} 사이 정수여야 합니다.` };
+  } else {
+    // landing — percentage, decimals allowed, 0 < t <= 100
+    if (threshold > 100) return { ok: false, message: "전환율 기준은 100%를 넘을 수 없습니다." };
+  }
+
   if (!deadline) return { ok: false, message: "마감일을 정하세요." };
   const d = dateOnly(deadline);
   const today = dateOnly(todayISO);
   if (Number.isNaN(d)) return { ok: false, message: "마감일이 올바르지 않습니다." };
   if (d <= today) return { ok: false, message: "마감일은 오늘 이후로 정하세요." };
+
   return { ok: true };
 }
 
