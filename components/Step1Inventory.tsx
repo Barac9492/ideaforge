@@ -57,6 +57,8 @@ export default function Step1Inventory({ go }: { go: (v: View) => void }) {
             <textarea
               id={f.key}
               rows={3}
+              required={f.required}
+              aria-required={f.required || undefined}
               value={inv[f.key]}
               onChange={(e) => update(f.key, e.target.value)}
             />
@@ -64,6 +66,8 @@ export default function Step1Inventory({ go }: { go: (v: View) => void }) {
             <input
               id={f.key}
               type="text"
+              required={f.required}
+              aria-required={f.required || undefined}
               value={inv[f.key]}
               onChange={(e) => update(f.key, e.target.value)}
             />

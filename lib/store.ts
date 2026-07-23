@@ -26,6 +26,7 @@ export type QuestionCheck = {
   verdict: "yes" | "mixed" | "no" | "unknown";
   note: string;
   nextAction: string;
+  isFounderFit?: boolean;
 };
 export type SignalCheck = { name: string; present: boolean; note: string };
 export type Evaluation = {
@@ -38,20 +39,27 @@ export type Evaluation = {
 };
 
 export type ExperimentKind = "interview" | "landing" | "concierge";
+export type Verdict = "계속" | "수정" | "중단";
 
 export type PreCommit = {
   experiment: ExperimentKind | "";
-  metric: string;
-  threshold: number;
+  threshold: number; // interview: positives target; concierge: paid target; landing: signup %
   unit: string;
   deadline: string;
   committedAt: string;
-  changeLog: { at: string; fromThreshold: number; fromMetric: string }[];
+  changeLog: { at: string; fromThreshold: number; fromExperiment: string }[];
 };
 
 export type Outcome = {
-  resultValue: number | null;
-  verdict: "계속" | "수정" | "중단" | "";
+  // interview/concierge
+  completed?: number;
+  positives?: number;
+  // landing
+  visitors?: number;
+  signups?: number;
+  // the value actually compared against threshold
+  computed: number | null;
+  verdict: Verdict | "";
   decidedAt: string;
 };
 
@@ -62,6 +70,7 @@ export const KEYS = {
   evaluation: "ideaforge.evaluation",
   precommit: "ideaforge.precommit",
   outcome: "ideaforge.outcome",
+  outcomeHistory: "ideaforge.outcomeHistory",
   apiKey: "ideaforge.apiKey",
 } as const;
 

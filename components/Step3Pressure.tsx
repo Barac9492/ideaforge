@@ -103,10 +103,10 @@ export default function Step3Pressure({ go }: { go: (v: View) => void }) {
                   <div className="body">
                     <strong>
                       {i + 1}. {q.q}
-                      {i === 0 && <span className="q-star">★ 가장 중요</span>}
+                      {q.isFounderFit && <span className="q-star">★ 가장 중요</span>}
                     </strong>
                     {q.note && <p>{q.note}</p>}
-                    {q.verdict === "unknown" && (
+                    {q.verdict === "unknown" && q.isFounderFit && (
                       <p className="next">
                         <button className="link-btn" onClick={() => go("step1")}>
                           1단계에서 재료를 채우면 이 질문을 판정할 수 있어요 →

@@ -11,7 +11,7 @@ export const HERO = {
 };
 
 export const FOOTER =
-  "프레임워크 출처: Y Combinator / Jared Friedman (Startup School 2022), Paul Graham 『How to Get Startup Ideas』. Y Combinator와 무관하며 승인·제휴 관계가 없습니다. 입력한 내용과 API 키는 브라우저에만 저장됩니다.";
+  "프레임워크 출처: Y Combinator / Jared Friedman (Startup School 2022), Paul Graham 『How to Get Startup Ideas』. Y Combinator와 무관하며 승인·제휴 관계가 없습니다. 입력한 내용과 API 키는 이 브라우저에만 저장됩니다. 다만 AI 단계 실행 시에는 IdeaForge 서버를 거쳐 Anthropic으로 전송되며, 앱이 따로 저장하지는 않습니다.";
 
 export const STEPS = [
   {
@@ -20,7 +20,7 @@ export const STEPS = [
     name: "나의 재료",
     blurb: "아이디어의 원료를 꺼냅니다.",
     lesson:
-      "좋은 창업 아이디어의 70%는 브레인스토밍이 아니라 창업자가 이미 가진 것에서 나옵니다. 잘하는 일, 직접 겪은 문제, 남들은 못 보는 것. 여기서 5가지를 솔직하게 적을수록 다음 단계의 아이디어가 당신만의 것이 됩니다.",
+      "좋은 창업 아이디어는 대개 브레인스토밍이 아니라 창업자가 이미 가진 것에서 나옵니다. 잘하는 일, 직접 겪은 문제, 남들은 못 보는 것. 여기서 5가지를 솔직하게 적을수록 다음 단계의 아이디어가 당신만의 것이 됩니다.",
   },
   {
     n: 2,
@@ -104,9 +104,6 @@ export const EXPERIMENTS: {
   name: string;
   summary: string;
   how: string[];
-  metric: string;
-  unit: string;
-  defaultThreshold: number;
 }[] = [
   {
     kind: "interview",
@@ -119,23 +116,17 @@ export const EXPERIMENTS: {
       "질문 예: “그때 돈이나 시간을 얼마나 썼나요?”",
       "질문 예: “지금은 어떻게 해결하고 계세요?”",
     ],
-    metric: "10명 중 '이 문제로 돈·시간을 쓴 적 있다'고 답한 사람 수",
-    unit: "명",
-    defaultThreshold: 6,
   },
   {
     kind: "landing",
     name: "사전 신청 랜딩",
     summary: "제품 대신 한 페이지를 만들고, 신청 버튼을 답니다.",
     how: [
-      "노코드로 랜딩 1장: 왯폼(Waveform)·탈리(Tally)·노션.",
+      "노코드로 랜딩 1장: 구글폼·탈리(Tally)·네이버폼.",
       "인스타그램, 관련 네이버 카페, 커뮤니티에 링크 공유.",
-      "측정: 방문자 대비 사전신청 전환율.",
+      "측정: 방문자 대비 사전신청 전환율(방문자 수와 신청 수를 기록하면 자동 계산).",
       "허수 방지 — 이메일뿐 아니라 '얼마면 쓰겠다'까지 받으면 신호가 진짜입니다.",
     ],
-    metric: "방문자 대비 사전신청 전환율(%)",
-    unit: "%",
-    defaultThreshold: 10,
   },
   {
     kind: "concierge",
@@ -146,17 +137,19 @@ export const EXPERIMENTS: {
       "카카오톡·전화·대면 무엇이든 OK. 자동화는 나중.",
       "측정: 돈을 받았는가. 무료로 좋다는 말은 신호가 아닙니다.",
     ],
-    metric: "돈을 내고 서비스를 이용한 건수",
-    unit: "건",
-    defaultThreshold: 3,
   },
 ];
 
 // Rate-limit / access copy
 export const ACCESS = {
-  freeBanner: "무료로 사용해 보세요 — 하루 몇 번은 무료입니다. 더 쓰려면 고급 설정에서 본인 API 키를 넣으세요.",
+  freeOn:
+    "무료로 사용해 보세요 — 하루 몇 번은 무료입니다. 더 쓰려면 ‘고급 설정’에서 본인 API 키를 넣으세요.",
+  freeOff:
+    "이 AI 단계는 지금 본인 Anthropic API 키가 필요합니다. 위 ‘고급 설정’에서 키를 넣어주세요. (무료 제공은 준비되면 열립니다.)",
   needKey:
-    "지금은 무료 사용이 준비되지 않았습니다. 아래 ‘고급 설정’에서 본인 Anthropic API 키를 넣으면 바로 사용할 수 있어요.",
-  storageWarning: "이 키는 이 브라우저에만 저장됩니다. 공용 PC라면 사용 후 반드시 삭제하세요.",
+    "지금은 무료 사용이 준비되지 않았습니다. 위 ‘고급 설정’에서 본인 Anthropic API 키를 넣으면 바로 사용할 수 있어요.",
+  storageWarning:
+    "키와 입력 내용은 이 브라우저에만 저장됩니다. 다만 AI 실행 시 IdeaForge 서버를 거쳐 Anthropic으로 전송됩니다(앱이 따로 저장하지는 않음). 공용 PC라면 사용 후 반드시 삭제하세요.",
+  verifyLabel: "사람인지 확인 (무료 사용에 필요)",
   removeKey: "저장된 키 삭제",
 };

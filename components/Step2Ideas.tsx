@@ -10,12 +10,14 @@ import type { View } from "@/lib/nav";
 const FIELD_LABEL: Record<string, string> = Object.fromEntries(
   INVENTORY_FIELDS.map((f) => [f.key, f.label])
 );
+const FREE_ON = process.env.NEXT_PUBLIC_FREE_TIER === "1";
 
 export default function Step2Ideas({ go }: { go: (v: View) => void }) {
   const [inv, setInv] = useState<Inventory | null>(null);
   const [ideas, setIdeas] = useState<Idea[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [goInventory, setGoInventory] = useState(false);
   const [directOpen, setDirectOpen] = useState(false);
   const [direct, setDirect] = useState("");
 
@@ -36,11 +38,13 @@ export default function Step2Ideas({ go }: { go: (v: View) => void }) {
     if (!inv) return;
     setLoading(true);
     setError(null);
+    setGoInventory(false);
     const res = await callIdea({ mode: "generate", inventory: inv });
     setLoading(false);
     if (!res.ok) {
       setError(res.error || "생성에 실패했습니다.");
       if (res.needKey) openAdvanced();
+      if (res.needInventory) setGoInventory(true);
       return;
     }
     if (res.data?.observation) return; // handled by empty-state UI
@@ -68,7 +72,7 @@ export default function Step2Ideas({ go }: { go: (v: View) => void }) {
       <h2 className="step-title">아이디어</h2>
       <p className="step-sub">당신의 재료에서만 꺼냅니다. 각 아이디어는 입력 중 최소 두 가지를 근거로 삼습니다.</p>
 
-      <div className="access-bar">{ACCESS.freeBanner}</div>
+      <div className="access-bar">{FREE_ON ? ACCESS.freeOn : ACCESS.freeOff}</div>
 
       {noProblem ? (
         <div className="notice warn">
@@ -84,7 +88,18 @@ export default function Step2Ideas({ go }: { go: (v: View) => void }) {
         </div>
       )}
 
-      {error && <div className="notice err" style={{ marginTop: 14 }}>{error}</div>}
+      {error && (
+        <div className="notice err" style={{ marginTop: 14 }}>
+          {error}
+          {goInventory && (
+            <div className="btn-row" style={{ marginTop: 10 }}>
+              <button className="btn" onClick={() => go("step1")}>
+                1단계에서 재료 다듬기 →
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {ideas.length > 0 && (
         <div className="cards" style={{ marginTop: 22 }}>

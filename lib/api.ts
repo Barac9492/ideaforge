@@ -28,6 +28,8 @@ export async function callIdea(payload: Payload): Promise<IdeaApiResult> {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...payload, apiKey: apiKey || undefined, turnstileToken }),
     });
+    // Turnstile tokens are single-use — refresh for the next free call.
+    if (typeof window !== "undefined") (window as any).__ifResetTurnstile?.();
     const json = await res.json();
     if (!res.ok) {
       return {

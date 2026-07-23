@@ -3,27 +3,26 @@
 import { useEffect, useState } from "react";
 import StepHeader from "./StepHeader";
 import { EXPERIMENTS, VERDICTS } from "@/lib/lessons";
+import { KEYS, load, save, type Outcome, type PreCommit } from "@/lib/store";
 import {
-  KEYS,
-  load,
-  save,
+  EXPERIMENT_META,
+  evaluateResult,
+  isDeadlinePassed,
+  validatePrecommit,
   type ExperimentKind,
-  type Outcome,
-  type PreCommit,
-} from "@/lib/store";
-import { decideVerdict } from "@/lib/verdict";
+  type ResultInputs,
+} from "@/lib/verdict";
 import type { View } from "@/lib/nav";
 
 const EMPTY_PC: PreCommit = {
   experiment: "",
-  metric: "",
   threshold: 0,
   unit: "",
   deadline: "",
   committedAt: "",
   changeLog: [],
 };
-const EMPTY_OUT: Outcome = { resultValue: null, verdict: "", decidedAt: "" };
+const EMPTY_OUT: Outcome = { computed: null, verdict: "", decidedAt: "" };
 
 function nowIso() {
   return new Date().toISOString();
@@ -40,15 +39,25 @@ export default function Step4Reality({ go }: { go: (v: View) => void }) {
   const [idea, setIdea] = useState("");
   const [pc, setPc] = useState<PreCommit>(EMPTY_PC);
   const [out, setOut] = useState<Outcome>(EMPTY_OUT);
-  const [resultInput, setResultInput] = useState("");
+  const [history, setHistory] = useState<Outcome[]>([]);
   const [hydrated, setHydrated] = useState(false);
+  const [todayISO, setTodayISO] = useState("");
+
+  // per-experiment result inputs
+  const [completedIn, setCompletedIn] = useState("");
+  const [positivesIn, setPositivesIn] = useState("");
+  const [visitorsIn, setVisitorsIn] = useState("");
+  const [signupsIn, setSignupsIn] = useState("");
+
+  const [pcError, setPcError] = useState<string | null>(null);
+  const [resultError, setResultError] = useState<string | null>(null);
 
   useEffect(() => {
     setIdea(load<string>(KEYS.selectedIdea, ""));
     setPc(load<PreCommit>(KEYS.precommit, EMPTY_PC));
-    const o = load<Outcome>(KEYS.outcome, EMPTY_OUT);
-    setOut(o);
-    if (o.resultValue !== null) setResultInput(String(o.resultValue));
+    setOut(load<Outcome>(KEYS.outcome, EMPTY_OUT));
+    setHistory(load<Outcome[]>(KEYS.outcomeHistory, []));
+    setTodayISO(nowIso());
     setHydrated(true);
   }, []);
 
@@ -60,24 +69,45 @@ export default function Step4Reality({ go }: { go: (v: View) => void }) {
     setOut(next);
     if (hydrated) save(KEYS.outcome, next);
   }
+  function persistHistory(next: Outcome[]) {
+    setHistory(next);
+    if (hydrated) save(KEYS.outcomeHistory, next);
+  }
+
+  const locked = pc.committedAt !== "";
+  const hasVerdict = out.verdict !== "";
+  const canPickExperiment = !locked && !hasVerdict;
+  const meta = pc.experiment ? EXPERIMENT_META[pc.experiment] : null;
+  const specCopy = pc.experiment ? EXPERIMENTS.find((e) => e.kind === pc.experiment) : null;
+  const deadlinePassed = locked && isDeadlinePassed(pc.deadline, todayISO);
 
   function chooseExperiment(kind: ExperimentKind) {
-    const spec = EXPERIMENTS.find((e) => e.kind === kind)!;
+    if (!canPickExperiment) return;
+    const m = EXPERIMENT_META[kind];
     persistPc({
-      ...EMPTY_PC,
       experiment: kind,
-      metric: spec.metric,
-      unit: spec.unit,
-      threshold: spec.defaultThreshold,
+      threshold: m.defaultThreshold,
+      unit: m.unit,
+      deadline: pc.deadline,
+      committedAt: "",
       changeLog: pc.changeLog,
     });
-    // reset any prior outcome when switching experiment
-    persistOut(EMPTY_OUT);
-    setResultInput("");
+    setPcError(null);
+    setResultError(null);
   }
 
   function lock() {
-    if (!pc.metric.trim() || !(pc.threshold > 0)) return;
+    const check = validatePrecommit({
+      experiment: pc.experiment,
+      threshold: pc.threshold,
+      deadline: pc.deadline,
+      todayISO: nowIso(),
+    });
+    if (!check.ok) {
+      setPcError(check.message);
+      return;
+    }
+    setPcError(null);
     persistPc({ ...pc, committedAt: nowIso() });
   }
 
@@ -93,20 +123,62 @@ export default function Step4Reality({ go }: { go: (v: View) => void }) {
       committedAt: "",
       changeLog: [
         ...pc.changeLog,
-        { at: nowIso(), fromThreshold: pc.threshold, fromMetric: pc.metric },
+        { at: nowIso(), fromThreshold: pc.threshold, fromExperiment: pc.experiment },
       ],
     });
   }
 
   function decide() {
-    const r = Number(resultInput);
-    if (!Number.isFinite(r) || resultInput.trim() === "") return;
-    const verdict = decideVerdict(pc.threshold, r);
-    persistOut({ resultValue: r, verdict, decidedAt: nowIso() });
+    if (!pc.experiment) return;
+    setResultError(null);
+    let inputs: ResultInputs;
+    if (pc.experiment === "interview" || pc.experiment === "concierge") {
+      if (completedIn.trim() === "" || positivesIn.trim() === "") {
+        setResultError("완료 수와 성공 수를 모두 입력해 주세요.");
+        return;
+      }
+      inputs = {
+        experiment: pc.experiment,
+        completed: Number(completedIn),
+        positives: Number(positivesIn),
+      };
+    } else {
+      if (visitorsIn.trim() === "" || signupsIn.trim() === "") {
+        setResultError("방문자 수와 신청 수를 모두 입력해 주세요.");
+        return;
+      }
+      inputs = { experiment: "landing", visitors: Number(visitorsIn), signups: Number(signupsIn) };
+    }
+    const res = evaluateResult(pc.threshold, inputs);
+    if (!res.ok) {
+      setResultError(res.message);
+      return;
+    }
+    const record: Outcome = {
+      computed: res.computed,
+      verdict: res.verdict,
+      decidedAt: nowIso(),
+      ...(pc.experiment === "landing"
+        ? { visitors: Number(visitorsIn), signups: Number(signupsIn) }
+        : { completed: Number(completedIn), positives: Number(positivesIn) }),
+    };
+    persistOut(record);
   }
 
-  const spec = pc.experiment ? EXPERIMENTS.find((e) => e.kind === pc.experiment) : null;
-  const locked = pc.committedAt !== "";
+  function reopen() {
+    if (!window.confirm("이미 나온 판정을 다시 기록하시겠어요? 이전 판정은 기록으로 보관됩니다."))
+      return;
+    persistHistory([...history, out]);
+    persistOut(EMPTY_OUT);
+    setCompletedIn("");
+    setPositivesIn("");
+    setVisitorsIn("");
+    setSignupsIn("");
+    setResultError(null);
+  }
+
+  const isLanding = pc.experiment === "landing";
+  const sampleTarget = meta?.targetSample ?? 0;
 
   return (
     <div>
@@ -122,7 +194,6 @@ export default function Step4Reality({ go }: { go: (v: View) => void }) {
         </div>
       )}
 
-      {/* 1) choose experiment */}
       <h3 style={{ fontFamily: "var(--serif)", fontSize: 18, margin: "22px 0 12px" }}>
         어떤 실험을 할까요?
       </h3>
@@ -132,48 +203,45 @@ export default function Step4Reality({ go }: { go: (v: View) => void }) {
             key={e.kind}
             className={`exp${pc.experiment === e.kind ? " sel" : ""}`}
             onClick={() => chooseExperiment(e.kind)}
+            disabled={!canPickExperiment}
+            title={!canPickExperiment ? "기준이 잠겨 있습니다. ‘기준 바꾸기’로 먼저 여세요." : ""}
           >
             <h4>{e.name}</h4>
             <p>{e.summary}</p>
           </button>
         ))}
       </div>
+      {!canPickExperiment && (
+        <p className="hint-line">기준이 잠겨 실험은 바꿀 수 없습니다. 바꾸려면 아래 ‘기준 바꾸기’를 누르세요.</p>
+      )}
 
-      {spec && (
+      {meta && specCopy && (
         <>
           <ul className="how-list">
-            {spec.how.map((h, i) => (
+            {specCopy.how.map((h, i) => (
               <li key={i}>{h}</li>
             ))}
           </ul>
 
-          {/* 2) pre-commit */}
+          {/* pre-commit */}
           <div className="block" style={{ marginTop: 20 }}>
             <h3>시작 전에 기준을 잠급니다</h3>
             {!locked ? (
               <>
                 <div className="field">
-                  <label htmlFor="metric">측정할 것</label>
-                  <input
-                    id="metric"
-                    type="text"
-                    value={pc.metric}
-                    onChange={(e) => persistPc({ ...pc, metric: e.target.value })}
-                  />
-                </div>
-                <div className="field">
-                  <label htmlFor="threshold">계속하려면 넘어야 하는 값 ({pc.unit})</label>
+                  <label htmlFor="threshold">{meta.thresholdLabel}</label>
                   <span className="fhint">이 값을 못 넘으면 접습니다. 지금 정직하게 정하세요.</span>
                   <input
                     id="threshold"
                     type="number"
                     min={0}
+                    max={isLanding ? 100 : sampleTarget}
                     value={pc.threshold || ""}
                     onChange={(e) => persistPc({ ...pc, threshold: Number(e.target.value) })}
                   />
                 </div>
                 <div className="field">
-                  <label htmlFor="deadline">마감일</label>
+                  <label htmlFor="deadline">마감일 (오늘 이후)</label>
                   <input
                     id="deadline"
                     type="date"
@@ -181,31 +249,31 @@ export default function Step4Reality({ go }: { go: (v: View) => void }) {
                     onChange={(e) => persistPc({ ...pc, deadline: e.target.value })}
                   />
                 </div>
-                <button
-                  className="btn primary"
-                  onClick={lock}
-                  disabled={!pc.metric.trim() || !(pc.threshold > 0)}
-                >
+                {pcError && <div className="notice err">{pcError}</div>}
+                <button className="btn primary" onClick={lock}>
                   🔒 기준 잠그기
                 </button>
               </>
             ) : (
               <>
                 <p className="locked-tag">🔒 기준 잠금됨 · {fmt(pc.committedAt)}</p>
-                <dl className="idea-locked" style={{ margin: "10px 0 0" }}>
+                <div style={{ margin: "10px 0 0" }}>
                   <div style={{ marginBottom: 6 }}>
-                    <strong>측정</strong> — {pc.metric}
+                    <strong>실험</strong> — {specCopy.name} (표본 {isLanding ? "방문자 기준" : `${sampleTarget}${meta.unit}`})
                   </div>
                   <div style={{ marginBottom: 6 }}>
                     <strong>기준</strong> — {pc.threshold}
-                    {pc.unit} 이상이면 계속
+                    {meta.unit} 이상이면 계속
                   </div>
-                  {pc.deadline && (
-                    <div>
-                      <strong>마감</strong> — {pc.deadline}
-                    </div>
-                  )}
-                </dl>
+                  <div>
+                    <strong>마감</strong> — {pc.deadline}
+                  </div>
+                </div>
+                {deadlinePassed && (
+                  <div className="notice warn" style={{ marginTop: 12 }}>
+                    마감일이 지났습니다. 결과를 기록하고 판정을 받으세요.
+                  </div>
+                )}
                 <div className="btn-row" style={{ marginTop: 12 }}>
                   <button className="btn ghost" onClick={editCriteria}>
                     기준 바꾸기
@@ -219,51 +287,118 @@ export default function Step4Reality({ go }: { go: (v: View) => void }) {
                 <b>기준 변경 기록</b>
                 {pc.changeLog.map((c, i) => (
                   <div key={i} style={{ fontSize: 13, marginTop: 4 }}>
-                    {fmt(c.at)} · 이전 기준: {c.fromMetric} / {c.fromThreshold}
+                    {fmt(c.at)} · 이전: {c.fromExperiment || "-"} / 기준 {c.fromThreshold}
                   </div>
                 ))}
               </div>
             )}
           </div>
 
-          {/* 3) record result + verdict */}
-          {locked && (
+          {/* result + verdict */}
+          {locked && !hasVerdict && (
             <div className="block">
               <h3>결과를 기록하고 판정 받기</h3>
-              <div className="field">
-                <label htmlFor="result">실제 결과 값 ({pc.unit})</label>
-                <span className="fhint">
-                  실험이 끝난 뒤 실제 숫자를 입력하세요. 판정은 기분이 아니라 잠근 기준이 합니다.
-                </span>
-                <input
-                  id="result"
-                  type="number"
-                  min={0}
-                  value={resultInput}
-                  onChange={(e) => setResultInput(e.target.value)}
-                />
-              </div>
-              <button
-                className="btn primary"
-                onClick={decide}
-                disabled={resultInput.trim() === ""}
-              >
+              <span className="fhint" style={{ display: "block", marginBottom: 14 }}>
+                실험이 끝난 뒤 실제 숫자를 입력하세요. 판정은 기분이 아니라 잠근 기준이 합니다.
+              </span>
+              {isLanding ? (
+                <>
+                  <div className="field">
+                    <label htmlFor="visitors">방문자 수</label>
+                    <input
+                      id="visitors"
+                      type="number"
+                      min={0}
+                      value={visitorsIn}
+                      onChange={(e) => setVisitorsIn(e.target.value)}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="signups">사전신청 수</label>
+                    <input
+                      id="signups"
+                      type="number"
+                      min={0}
+                      value={signupsIn}
+                      onChange={(e) => setSignupsIn(e.target.value)}
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="field">
+                    <label htmlFor="completed">완료한 수 (최대 {sampleTarget})</label>
+                    <input
+                      id="completed"
+                      type="number"
+                      min={0}
+                      max={sampleTarget}
+                      value={completedIn}
+                      onChange={(e) => setCompletedIn(e.target.value)}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="positives">
+                      {pc.experiment === "interview"
+                        ? "그 중 과거에 돈·시간을 쓴 사람 수"
+                        : "그 중 돈을 낸 건수"}
+                    </label>
+                    <input
+                      id="positives"
+                      type="number"
+                      min={0}
+                      value={positivesIn}
+                      onChange={(e) => setPositivesIn(e.target.value)}
+                    />
+                  </div>
+                </>
+              )}
+              {resultError && <div className="notice err">{resultError}</div>}
+              <button className="btn primary" onClick={decide}>
                 판정 받기
               </button>
+            </div>
+          )}
 
-              {out.verdict && (
-                <div style={{ marginTop: 18 }}>
-                  <div className={`big-verdict ${out.verdict}`}>
-                    <div className="v">{out.verdict}</div>
-                    <p>{VERDICTS[out.verdict]}</p>
+          {hasVerdict && (
+            <div className="block">
+              <h3>판정</h3>
+              <div className={`big-verdict ${out.verdict}`}>
+                <div className="v">{out.verdict}</div>
+                <p>{VERDICTS[out.verdict as "계속" | "수정" | "중단"]}</p>
+              </div>
+              <p style={{ fontSize: 13, color: "var(--ink-faint)", textAlign: "center" }}>
+                {isLanding
+                  ? `방문 ${out.visitors} · 신청 ${out.signups} · 전환율 ${out.computed}% · 기준 ${pc.threshold}%`
+                  : `완료 ${out.completed}${meta.unit} · 성공 ${out.positives}${meta.unit} · 기준 ${pc.threshold}${meta.unit}`}{" "}
+                · {fmt(out.decidedAt)}
+              </p>
+              <div className="btn-row" style={{ marginTop: 14, justifyContent: "center" }}>
+                <button className="btn ghost" onClick={reopen}>
+                  결과 다시 기록
+                </button>
+              </div>
+            </div>
+          )}
+
+          {history.length > 0 && (
+            <div className="block">
+              <h3>지난 판정 기록</h3>
+              <div className="checks">
+                {history.map((h, i) => (
+                  <div key={i} className="check-row">
+                    <span className={`pill ${h.verdict === "계속" ? "yes" : h.verdict === "수정" ? "mixed" : "no"}`}>
+                      {h.verdict}
+                    </span>
+                    <div className="body">
+                      <p>
+                        {h.computed}
+                        {isLanding ? "%" : meta.unit} · {fmt(h.decidedAt)}
+                      </p>
+                    </div>
                   </div>
-                  <p style={{ fontSize: 13, color: "var(--ink-faint)", textAlign: "center" }}>
-                    결과 {out.resultValue}
-                    {pc.unit} · 기준 {pc.threshold}
-                    {pc.unit} · {fmt(out.decidedAt)}
-                  </p>
-                </div>
-              )}
+                ))}
+              </div>
             </div>
           )}
         </>
