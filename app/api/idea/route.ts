@@ -1,57 +1,54 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { FRAMEWORK } from "@/lib/framework";
+import { EVALUATE_INSTRUCTION, FRAMEWORK, GENERATE_INSTRUCTION } from "@/lib/framework";
 import { checkFreeAllowance, freeTierConfigured, verifyTurnstile } from "@/lib/limits";
+import { normalizeEvaluation, normalizeIdeas, SchemaError } from "@/lib/schema";
+import { PAPER_WARNING } from "@/lib/lessons";
+import type { Inventory } from "@/lib/store";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
 type Body = {
   mode: "generate" | "evaluate";
-  input: string;
-  constraints?: string;
-  count?: number;
+  inventory?: Partial<Inventory>;
+  idea?: string;
   apiKey?: string;
-  model?: string;
   turnstileToken?: string;
 };
 
 // Abuse guards
-const MAX_INPUT = 4000;
-const MAX_CONSTRAINTS = 2000;
-const FREE_MODEL = "claude-sonnet-5"; // free runs never touch Opus
-const FREE_MAX_TOKENS = 2000;
-const BYO_MAX_TOKENS = 3000;
+const MAX_INPUT = 5000;
+const MODEL = "claude-sonnet-5"; // free and BYO both use Sonnet; Opus never exposed
+const MAX_TOKENS = 2200;
 
 function getIp(req: Request): string {
   const fwd = req.headers.get("x-forwarded-for");
   return fwd?.split(",")[0]?.trim() || req.headers.get("x-real-ip") || "unknown";
 }
 
-const GENERATE_INSTRUCTION = (count: number) => `MODE: GENERATE.
-The user will give you their background: jobs, skills, lived experiences, problems they've personally hit, and interests. Generate ${count} startup ideas that are GOOD IDEAS *FOR THEM* — anchored in founder-market fit. Favor recipes 1 (what they're great at) and 2 (problems they've personally hit). Each idea must be a promising starting point that can morph, not a finished plan. Avoid tarpits; if an idea flirts with one, only include it if you can name why this person could beat the barrier.
-
-Return ONLY valid JSON, no prose, no code fences, matching exactly:
-{"ideas":[{"title":"","oneLiner":"","recipe":"which of the 7 recipes + why","founderFit":"why THIS person specifically, tied to their stated background","whyNow":"the recent change making this possible/urgent, or 'none obvious' honestly","risk":"the single biggest honest risk"}]}`;
-
-const EVALUATE_INSTRUCTION = `MODE: EVALUATE.
-The user will give you a startup idea. Run the full framework honestly. Do not flatter. A strong idea doesn't need every yes, but each no is a risk that needs a plan.
-
-Return ONLY valid JSON, no prose, no code fences, matching exactly:
-{
- "mistakes":[{"name":"Solution in search of a problem","verdict":"pass|warn|fail","note":""},{"name":"Tarpit idea","verdict":"pass|warn|fail","note":"if warn/fail, name the exact structural barrier"},{"name":"Jumping on first idea","verdict":"pass|warn|fail","note":""},{"name":"Waiting for perfect idea","verdict":"pass|warn|fail","note":""}],
- "questions":[{"q":"Founder-market fit","verdict":"yes|mixed|no","note":"","nextAction":""},{"q":"Market size","verdict":"yes|mixed|no","note":"","nextAction":""},{"q":"How acute is the problem","verdict":"yes|mixed|no","note":"","nextAction":""},{"q":"Competition","verdict":"yes|mixed|no","note":"","nextAction":""},{"q":"Do people you know want it","verdict":"yes|mixed|no","note":"","nextAction":""},{"q":"Why now","verdict":"yes|mixed|no","note":"","nextAction":""},{"q":"Is there a proxy","verdict":"yes|mixed|no","note":"","nextAction":""},{"q":"Would you work on it for years","verdict":"yes|mixed|no","note":"","nextAction":""},{"q":"Is it scalable","verdict":"yes|mixed|no","note":"","nextAction":""},{"q":"Is it a good idea space","verdict":"yes|mixed|no","note":"","nextAction":""}],
- "signals":[{"name":"Hard to get started (schlep)","present":true,"note":""},{"name":"Boring space","present":true,"note":""},{"name":"Already has competitors","present":true,"note":""}],
- "verdict":"honest 2-3 sentence overall read",
- "testNext":"the single most important assumption to test now, and how"
-}`;
+function jsonError(message: string, status: number, extra: Record<string, unknown> = {}) {
+  return Response.json({ error: message, ...extra }, { status });
+}
 
 function extractJson(text: string): any {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
   const raw = fenced ? fenced[1] : text;
   const start = raw.indexOf("{");
   const end = raw.lastIndexOf("}");
-  if (start === -1 || end === -1) throw new Error("no json");
+  if (start === -1 || end === -1) throw new SchemaError("no json object");
   return JSON.parse(raw.slice(start, end + 1));
+}
+
+function buildInventoryText(inv?: Partial<Inventory>): string {
+  if (!inv) return "";
+  const rows = [
+    ["지금까지 해온 일", inv.career],
+    ["남들보다 잘하는 것", inv.strength],
+    ["직접 겪은 문제", inv.problemLived],
+    ["나만의 접근권", inv.unfairAccess],
+    ["제약 조건", inv.constraints],
+  ].filter(([, v]) => v && String(v).trim());
+  return rows.map(([k, v]) => `- ${k}: ${String(v).trim()}`).join("\n");
 }
 
 export async function POST(req: Request) {
@@ -59,87 +56,100 @@ export async function POST(req: Request) {
   try {
     body = (await req.json()) as Body;
   } catch {
-    return Response.json({ error: "잘못된 요청입니다." }, { status: 400 });
+    return jsonError("요청 형식이 올바르지 않습니다.", 400);
   }
 
-  if (!body.input?.trim())
-    return Response.json({ error: "입력이 비어 있습니다." }, { status: 400 });
-  if (body.input.length > MAX_INPUT || (body.constraints || "").length > MAX_CONSTRAINTS)
-    return Response.json({ error: "입력이 너무 깁니다. 더 간결하게 줄여주세요." }, { status: 413 });
+  if (body.mode !== "generate" && body.mode !== "evaluate")
+    return jsonError("알 수 없는 요청입니다.", 400);
 
+  // ── Assemble prompt input per mode ──────────────────────────────────────
+  let userContent = "";
+  if (body.mode === "generate") {
+    const problem = (body.inventory?.problemLived || "").trim();
+    if (!buildInventoryText(body.inventory))
+      return jsonError("먼저 1단계에서 재료를 채워주세요.", 400, { needInventory: true });
+    // Deterministic guard: no lived problem => observation task, no AI call, no cost.
+    if (problem === "없음" || problem === "")
+      return Response.json({ data: { observation: true } });
+    userContent = `내 재료:\n${buildInventoryText(body.inventory)}\n\n이 재료에서만 아이디어 3개를 꺼내줘.`;
+  } else {
+    const idea = (body.idea || "").trim();
+    if (!idea) return jsonError("평가할 아이디어가 없습니다.", 400);
+    const invText = buildInventoryText(body.inventory);
+    userContent =
+      `평가할 아이디어:\n${idea}\n\n` +
+      (invText ? `창업자 재료(1단계):\n${invText}\n` : `창업자 재료(1단계): 제공되지 않음. 1번 질문은 unknown으로.\n`);
+  }
+
+  if (userContent.length > MAX_INPUT)
+    return jsonError("입력이 너무 깁니다. 더 간결하게 줄여주세요.", 413);
+
+  // ── Key selection + abuse controls (preserved) ──────────────────────────
   const ownKey = body.apiKey?.trim();
   let apiKey: string;
-  let model: string;
-  let maxTokens: number;
 
   if (ownKey) {
-    // Bring-your-own-key: the user pays, so no rate limits. They choose the model.
-    apiKey = ownKey;
-    model = body.model || FREE_MODEL;
-    maxTokens = BYO_MAX_TOKENS;
+    apiKey = ownKey; // BYO: user pays, no rate limit
   } else {
-    // Free tier — only available when a server key AND a store are configured.
-    if (!freeTierConfigured()) {
-      return Response.json(
-        {
-          error:
-            "Add your own Anthropic API key (top right) to run IdeaForge. It's stored only in your browser.",
-          needKey: true,
-        },
-        { status: 401 }
+    if (!freeTierConfigured())
+      return jsonError(
+        "지금은 무료 사용이 준비되지 않았습니다. ‘고급 설정’에서 본인 Anthropic API 키를 넣어주세요.",
+        401,
+        { needKey: true }
       );
-    }
     const ip = getIp(req);
-
     const human = await verifyTurnstile(body.turnstileToken, ip);
-    if (!human)
-      return Response.json(
-        { error: "Bot check failed — refresh the page and try again." },
-        { status: 403 }
-      );
+    if (!human) return jsonError("봇 확인에 실패했습니다. 페이지를 새로고침하고 다시 시도해 주세요.", 403);
 
     const allow = await checkFreeAllowance(ip);
     if (!allow.ok) {
       const msg =
         allow.reason === "global"
-          ? "IdeaForge has hit today's free capacity. Add your own Anthropic key (top right) for unlimited runs."
-          : "You've used today's free runs. Add your own Anthropic key (top right) to keep going.";
-      return Response.json({ error: msg, needKey: true }, { status: 429 });
+          ? "오늘 무료 사용량이 모두 소진되었습니다. ‘고급 설정’에서 본인 API 키를 넣으면 계속 쓸 수 있어요."
+          : "오늘 무료 사용량을 다 썼습니다. 내일 다시 오거나, ‘고급 설정’에서 본인 API 키를 넣어주세요.";
+      return jsonError(msg, 429, { needKey: true });
     }
-
     apiKey = process.env.ANTHROPIC_API_KEY as string;
-    model = FREE_MODEL; // force the cheap path for free runs
-    maxTokens = FREE_MAX_TOKENS;
   }
 
+  // ── Call the model ──────────────────────────────────────────────────────
   const client = new Anthropic({ apiKey });
-  const instruction =
-    body.mode === "generate"
-      ? GENERATE_INSTRUCTION(Math.min(Math.max(body.count || 5, 1), 8))
-      : EVALUATE_INSTRUCTION;
-  const userContent =
-    body.mode === "generate"
-      ? `My background:\n${body.input}\n\n${body.constraints ? `Constraints: ${body.constraints}\n\n` : ""}Generate ideas for me.`
-      : `Evaluate this idea:\n${body.input}`;
+  const instruction = body.mode === "generate" ? GENERATE_INSTRUCTION : EVALUATE_INSTRUCTION;
 
+  let text: string;
   try {
     const msg = await client.messages.create({
-      model,
-      max_tokens: maxTokens,
+      model: MODEL,
+      max_tokens: MAX_TOKENS,
       system: `${FRAMEWORK}\n\n${instruction}`,
       messages: [{ role: "user", content: userContent }],
     });
-    const text = msg.content
+    text = msg.content
       .filter((b): b is Anthropic.TextBlock => b.type === "text")
       .map((b) => b.text)
       .join("");
-    try {
-      return Response.json({ data: extractJson(text) });
-    } catch {
-      return Response.json({ error: "모델 응답을 파싱하지 못했습니다.", raw: text }, { status: 502 });
-    }
   } catch (err: any) {
-    const message = err?.error?.error?.message || err?.message || "오류가 발생했습니다.";
-    return Response.json({ error: message }, { status: err?.status || 500 });
+    const message = err?.error?.error?.message || err?.message || "생성 중 오류가 발생했습니다.";
+    return jsonError(message, err?.status || 500);
+  }
+
+  // ── Parse + validate (Korean error on malformed output) ─────────────────
+  try {
+    const parsed = extractJson(text);
+    if (body.mode === "generate") {
+      const ideas = normalizeIdeas(parsed);
+      return Response.json({ data: { ideas } });
+    } else {
+      const evaluation = normalizeEvaluation(parsed);
+      // Paper-only warning inserted deterministically in server code.
+      return Response.json({ data: { ...evaluation, paperWarning: PAPER_WARNING } });
+    }
+  } catch (e) {
+    const detail = e instanceof SchemaError ? e.message : "parse";
+    return jsonError(
+      "결과를 제대로 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.",
+      502,
+      { detail }
+    );
   }
 }

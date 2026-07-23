@@ -1,61 +1,40 @@
-# IdeaForge
+# IdeaForge — 한국어 창업 워크북
 
-Generate startup ideas anchored to **your own** background, then pressure-test any idea through the Y Combinator framework. Two modes, one honest engine.
+**막연한 창업 생각을, 2주짜리 실험으로.** 아이디어를 던져주는 도구가 아니라, 내 경험에서
+아이디어를 꺼내고 현실에서 확인하게 만드는 4단계 워크북.
 
-## Why this instead of a "give me ideas" box
+## 4단계 여정
 
-A pure idea generator is a tarpit — ideas are cheap; conviction is scarce. So IdeaForge does the two things that actually help:
+1. **나의 재료** — 구조화된 자기 인벤토리(경력·강점·직접 겪은 문제·나만의 접근권·제약).
+2. **아이디어** — 재료에서만 3개 생성(각 아이디어는 입력 중 최소 2개를 근거로 인용). 직접 입력도 가능.
+   `직접 겪은 문제 = 없음`이면 아이디어 대신 **관찰 과제**를 돌려줍니다.
+3. **압박 테스트** — YC 프레임워크(네 가지 함정·열 가지 질문·역발상 신호) 한국어 서류 평가.
+   결과 상단에 "아직 아무것도 검증되지 않았습니다" 경고를 **서버 코드가** 삽입합니다.
+4. **현실 검증** — AI 호출 0회. 실험 설계 → 사전 기준 잠금 → 결과 기록 → 시스템이 계속/수정/중단 판정.
 
-1. **Generate** — ideas are built from *your* jobs, skills, and problems you've personally hit (founder-market fit first, via YC's Seven Recipes). Not random; not generic.
-2. **Evaluate** — paste any idea and it runs the real filter honestly, no flattery:
-   - **Four Mistakes** (incl. tarpit check — demands a *named* structural barrier)
-   - **Ten Questions** (each `no` paired with the concrete next action; Q1 founder-market fit weighted)
-   - **Three Counterintuitive Signals** (schlep / boring / has-competitors)
-   - An honest overall read + **the single assumption to test next.**
+계정·DB 없음. 모든 상태는 브라우저 localStorage.
 
-Every generated idea has a one-click **"Pressure-test →"** into the evaluator.
+## 비용 안전 (그대로 유지)
 
-## Run locally
+기본은 **BYO-key**: 방문자가 본인 키를 넣어야 하며 운영자 비용은 $0. 무료 티어는
+**서버 키 + Upstash 스토어가 둘 다 있을 때만** 켜집니다(안전 기본값). 무료 실행에는 per-IP
+일일 한도, 전역 일일 예산 킬스위치, Sonnet 고정+토큰 상한, 입력 길이 상한, 선택적 Turnstile이
+걸립니다. 활성화 절차는 `.env.example` 참고. **이 저장소는 유료 리소스나 서버 키를 만들지 않습니다.**
+
+## 개발
 
 ```bash
 npm install
-npm run dev   # http://localhost:3000
+npm run dev      # http://localhost:3000
+npm run build
+npm test         # 순수 로직 유닛 테스트 (schema guards, verdict)
 ```
 
-Paste an Anthropic API key in the top bar (stored in your browser only), or set `ANTHROPIC_API_KEY` on the server.
+## 스택
 
-## Deploy
+Next.js 14 (App Router) · React 18 · Anthropic SDK(Sonnet) · Upstash(선택) · DB 없음.
 
-Import the repo to Vercel — no config needed. Out of the box it runs in
-**bring-your-own-key** mode: every visitor pastes their own key, so it costs the
-operator **$0** and there is nothing to abuse.
+## 출처
 
-## Going public without getting a surprise bill
-
-The free tier is **off until you deliberately turn it on**, and is designed so
-you can't accidentally leave it wide open. To enable a rate-limited free tier:
-
-1. **Cap your worst case first.** In the Anthropic Console, make a *dedicated
-   workspace*, set a hard **monthly spend limit** (e.g. $20), and create a key
-   scoped to it. That cap is your guaranteed ceiling no matter what.
-2. **Add a store.** Create a free Upstash Redis DB; set `UPSTASH_REDIS_REST_URL`
-   and `UPSTASH_REDIS_REST_TOKEN`. **Free runs stay disabled unless both the
-   server key and the store exist** — so there's no misconfiguration that opens
-   the floodgates.
-3. Set `ANTHROPIC_API_KEY` (from step 1) and `NEXT_PUBLIC_FREE_TIER=1`.
-4. (Optional) Add Cloudflare Turnstile (`NEXT_PUBLIC_TURNSTILE_SITE_KEY` +
-   `TURNSTILE_SECRET_KEY`) to block headless bots.
-
-Built-in guards on free runs: **per-IP daily limit** (`FREE_RUNS_PER_IP_PER_DAY`,
-default 5), **global daily budget kill-switch** (`FREE_RUNS_GLOBAL_PER_DAY`,
-default 200 — after which everyone falls back to BYO for the day), **Sonnet only
-+ capped output** (no Opus on your dime), and a **hard input-length cap**. See
-`.env.example`.
-
-## Stack
-
-Next.js 14 (App Router) · Anthropic SDK · no database (state lives in the browser).
-
-## Credit
-
-Framework distilled from Y Combinator / Jared Friedman, *Startup School 2022*, and Paul Graham, *How to Get Startup Ideas*. **Not affiliated with or endorsed by Y Combinator.**
+Y Combinator / Jared Friedman (Startup School 2022), Paul Graham 『How to Get Startup Ideas』.
+**Y Combinator와 무관하며 승인·제휴 관계가 없습니다.**
