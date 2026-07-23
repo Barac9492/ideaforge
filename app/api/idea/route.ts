@@ -1,17 +1,31 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { FRAMEWORK } from "@/lib/framework";
+import { checkFreeAllowance, freeTierConfigured, verifyTurnstile } from "@/lib/limits";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
 type Body = {
   mode: "generate" | "evaluate";
-  input: string; // founder background (generate) OR the idea (evaluate)
-  constraints?: string; // optional: budget/time/industry
+  input: string;
+  constraints?: string;
   count?: number;
   apiKey?: string;
   model?: string;
+  turnstileToken?: string;
 };
+
+// Abuse guards
+const MAX_INPUT = 4000;
+const MAX_CONSTRAINTS = 2000;
+const FREE_MODEL = "claude-sonnet-5"; // free runs never touch Opus
+const FREE_MAX_TOKENS = 2000;
+const BYO_MAX_TOKENS = 3000;
+
+function getIp(req: Request): string {
+  const fwd = req.headers.get("x-forwarded-for");
+  return fwd?.split(",")[0]?.trim() || req.headers.get("x-real-ip") || "unknown";
+}
 
 const GENERATE_INSTRUCTION = (count: number) => `MODE: GENERATE.
 The user will give you their background: jobs, skills, lived experiences, problems they've personally hit, and interests. Generate ${count} startup ideas that are GOOD IDEAS *FOR THEM* — anchored in founder-market fit. Favor recipes 1 (what they're great at) and 2 (problems they've personally hit). Each idea must be a promising starting point that can morph, not a finished plan. Avoid tarpits; if an idea flirts with one, only include it if you can name why this person could beat the barrier.
@@ -48,23 +62,61 @@ export async function POST(req: Request) {
     return Response.json({ error: "잘못된 요청입니다." }, { status: 400 });
   }
 
-  const apiKey = body.apiKey?.trim() || process.env.ANTHROPIC_API_KEY;
-  if (!apiKey)
-    return Response.json(
-      { error: "Anthropic API key required. Paste one above, or set ANTHROPIC_API_KEY on the server." },
-      { status: 401 }
-    );
   if (!body.input?.trim())
     return Response.json({ error: "입력이 비어 있습니다." }, { status: 400 });
+  if (body.input.length > MAX_INPUT || (body.constraints || "").length > MAX_CONSTRAINTS)
+    return Response.json({ error: "입력이 너무 깁니다. 더 간결하게 줄여주세요." }, { status: 413 });
 
-  const model = body.model || "claude-sonnet-5";
+  const ownKey = body.apiKey?.trim();
+  let apiKey: string;
+  let model: string;
+  let maxTokens: number;
+
+  if (ownKey) {
+    // Bring-your-own-key: the user pays, so no rate limits. They choose the model.
+    apiKey = ownKey;
+    model = body.model || FREE_MODEL;
+    maxTokens = BYO_MAX_TOKENS;
+  } else {
+    // Free tier — only available when a server key AND a store are configured.
+    if (!freeTierConfigured()) {
+      return Response.json(
+        {
+          error:
+            "Add your own Anthropic API key (top right) to run IdeaForge. It's stored only in your browser.",
+          needKey: true,
+        },
+        { status: 401 }
+      );
+    }
+    const ip = getIp(req);
+
+    const human = await verifyTurnstile(body.turnstileToken, ip);
+    if (!human)
+      return Response.json(
+        { error: "Bot check failed — refresh the page and try again." },
+        { status: 403 }
+      );
+
+    const allow = await checkFreeAllowance(ip);
+    if (!allow.ok) {
+      const msg =
+        allow.reason === "global"
+          ? "IdeaForge has hit today's free capacity. Add your own Anthropic key (top right) for unlimited runs."
+          : "You've used today's free runs. Add your own Anthropic key (top right) to keep going.";
+      return Response.json({ error: msg, needKey: true }, { status: 429 });
+    }
+
+    apiKey = process.env.ANTHROPIC_API_KEY as string;
+    model = FREE_MODEL; // force the cheap path for free runs
+    maxTokens = FREE_MAX_TOKENS;
+  }
+
   const client = new Anthropic({ apiKey });
-
   const instruction =
     body.mode === "generate"
       ? GENERATE_INSTRUCTION(Math.min(Math.max(body.count || 5, 1), 8))
       : EVALUATE_INSTRUCTION;
-
   const userContent =
     body.mode === "generate"
       ? `My background:\n${body.input}\n\n${body.constraints ? `Constraints: ${body.constraints}\n\n` : ""}Generate ideas for me.`
@@ -73,7 +125,7 @@ export async function POST(req: Request) {
   try {
     const msg = await client.messages.create({
       model,
-      max_tokens: 3000,
+      max_tokens: maxTokens,
       system: `${FRAMEWORK}\n\n${instruction}`,
       messages: [{ role: "user", content: userContent }],
     });

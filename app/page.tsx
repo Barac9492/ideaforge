@@ -1,7 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Idea, Evaluation } from "@/lib/framework";
+
+const FREE_ON = process.env.NEXT_PUBLIC_FREE_TIER === "1";
+const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
 const MODELS = [
   { id: "claude-sonnet-5", label: "Sonnet 5 (fast)" },
@@ -32,6 +35,23 @@ export default function Page() {
   const [ideas, setIdeas] = useState<Idea[] | null>(null);
   const [evaluation, setEvaluation] = useState<Evaluation | null>(null);
   const [hydrated, setHydrated] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const [needKey, setNeedKey] = useState(false);
+  const keyRef = useRef<HTMLInputElement>(null);
+
+  // Optional Cloudflare Turnstile (only if a public site key is configured).
+  useEffect(() => {
+    if (!TURNSTILE_SITE_KEY) return;
+    (window as any).__ifToken = (t: string) => setTurnstileToken(t);
+    if (!document.getElementById("cf-ts")) {
+      const s = document.createElement("script");
+      s.id = "cf-ts";
+      s.src = "https://challenges.cloudflare.com/turnstile/v0/api.js";
+      s.async = true;
+      s.defer = true;
+      document.body.appendChild(s);
+    }
+  }, []);
 
   useEffect(() => {
     try {
@@ -50,6 +70,7 @@ export default function Page() {
   async function run() {
     setLoading(true);
     setError(null);
+    setNeedKey(false);
     if (mode === "generate") setIdeas(null); else setEvaluation(null);
     try {
       const res = await fetch("/api/idea", {
@@ -62,10 +83,18 @@ export default function Page() {
           count,
           apiKey: apiKey || undefined,
           model,
+          turnstileToken: turnstileToken || undefined,
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Request failed");
+      if (!res.ok) {
+        if (data.needKey) {
+          setNeedKey(true);
+          keyRef.current?.focus();
+          keyRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+        }
+        throw new Error(data.error || "Request failed");
+      }
       if (mode === "generate") setIdeas(data.data.ideas || []);
       else setEvaluation(data.data as Evaluation);
     } catch (e: any) {
@@ -97,9 +126,10 @@ export default function Page() {
         </div>
         <div className="controls">
           <input
-            type="password" className="key"
+            ref={keyRef}
+            type="password" className={needKey ? "key need" : "key"}
             placeholder="Anthropic API key (browser-only)"
-            value={apiKey} onChange={(e) => setApiKey(e.target.value)}
+            value={apiKey} onChange={(e) => { setApiKey(e.target.value); if (e.target.value) setNeedKey(false); }}
           />
           <select value={model} onChange={(e) => setModel(e.target.value)}>
             {MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
@@ -129,6 +159,18 @@ export default function Page() {
           2 · Evaluate <span>pressure-test an idea, no flattery</span>
         </button>
       </div>
+
+      <div className="access">
+        {FREE_ON
+          ? <>✦ <b>Free to try</b> — a few runs a day, on us. Add your own Anthropic key (top right) for unlimited runs and Opus.</>
+          : <>Add your Anthropic API key (top right) to run. It's stored only in your browser and billed to your account.</>}
+      </div>
+
+      {TURNSTILE_SITE_KEY && !apiKey && (
+        <div className="turnstile-wrap">
+          <div className="cf-turnstile" data-sitekey={TURNSTILE_SITE_KEY} data-callback="__ifToken" />
+        </div>
+      )}
 
       {mode === "generate" ? (
         <section className="input-card">
