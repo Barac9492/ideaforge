@@ -5,8 +5,13 @@ export const BRAND = {
   tagline: "아이디어는 만드는 게 아니라, 꺼내서 확인하는 것",
 };
 
+// The trailing clause "모른 척 못하게 해드립니다." is joined with non-breaking
+// spaces ( ) so it always wraps as one unit — plain reflow otherwise
+// leaves "해드립니다." stranded alone on the last line at several common
+// widths (e.g. 400–420px, 560px), which reads as an orphan.
 export const HERO = {
-  title: "몰랐던 걸 알려드리는 게 아닙니다. 알면서도 모른 척했던 걸 더 이상 모른 척 못하게 해드립니다.",
+  title:
+    "몰랐던 걸 알려드리는 게 아닙니다. 알면서도 모른 척했던 걸 더 이상 모른 척 못하게 해드립니다.",
   body: "AI가 아이디어를 던져주는 도구가 아닙니다. 당신의 경력과 직접 겪은 문제에서 아이디어를 꺼내고, YC 프레임워크로 두들겨 보고, 현실에서 확인하는 방법까지 설계합니다.",
 };
 
