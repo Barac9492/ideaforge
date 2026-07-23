@@ -52,6 +52,23 @@ export async function checkFreeAllowance(ip: string): Promise<LimitResult> {
   return { ok: true, remaining: Math.max(0, PER_IP - ipCount) };
 }
 
+// Give back a consumed free call when the failure was server-side (Anthropic
+// error or malformed model output) — the visitor shouldn't lose allowance to
+// our bug. Deliberately NOT called for 422 thin-input responses, which are the
+// product working. A rare DECR-below-zero just means the next INCR lands at 0;
+// slightly generous is fine.
+export async function refundFreeAllowance(ip: string): Promise<void> {
+  const r = getRedis();
+  if (!r) return;
+  const day = kstDayKey();
+  try {
+    await r.decr(`ideaforge:ip:${day}:${ip}`);
+    await r.decr(`ideaforge:global:${day}`);
+  } catch {
+    // refund is best-effort; never let it mask the original error response
+  }
+}
+
 // Cloudflare Turnstile. Free tier requires the secret (enforced by freeTierConfigured),
 // so on the free path a valid token is always required.
 export async function verifyTurnstile(token: string | undefined, ip: string): Promise<boolean> {

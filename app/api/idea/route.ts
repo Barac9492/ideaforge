@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { EVALUATE_INSTRUCTION, FRAMEWORK, GENERATE_INSTRUCTION } from "@/lib/framework";
-import { checkFreeAllowance, verifyTurnstile } from "@/lib/limits";
+import { checkFreeAllowance, refundFreeAllowance, verifyTurnstile } from "@/lib/limits";
 import { freeTierConfigured } from "@/lib/freetier";
 import { InsufficientInputError, normalizeEvaluation, normalizeIdeas, SchemaError } from "@/lib/schema";
 import { PAPER_WARNING } from "@/lib/lessons";
@@ -22,11 +22,14 @@ type Body = {
 const MAX_INPUT = 5000;
 const MAX_API_KEY = 300; // Anthropic keys are ~108 chars; reject anything absurd
 const MODEL = "claude-sonnet-5"; // official Sonnet id; free and BYO both use it, Opus never exposed
-// The evaluate response (4 mistakes + 10 questions w/ notes + 3 signals + verdict,
-// all in Korean) can run 1200-1800 output tokens on its own; 2200 left too little
-// headroom and risked truncation -> wasted paid call. 3500 keeps cost bounded
-// while giving real margin.
-const MAX_TOKENS = 3500;
+// On claude-sonnet-5, adaptive thinking runs by default when `thinking` is
+// omitted, and max_tokens caps thinking + response TEXT COMBINED. 3500 caused
+// live truncation (thinking ate the budget, the Korean JSON got cut mid-object
+// -> SchemaError -> a paid 502). max_tokens is a cap, not a charge — 8000 adds
+// headroom at zero marginal cost; effort "medium" bounds actual thinking spend
+// (Sonnet 5 medium ≈ Sonnet 4.6 high, ample for structured extraction).
+const MAX_TOKENS = 8000;
+const EFFORT = "medium" as const;
 
 function getIp(req: Request): string {
   const fwd = req.headers.get("x-forwarded-for");
@@ -98,6 +101,7 @@ export async function POST(req: Request) {
     return jsonError("API 키 형식이 올바르지 않습니다.", 400);
 
   let apiKey: string;
+  let freeIp: string | null = null; // set when this call consumed free-tier quota
   if (ownKey) {
     apiKey = ownKey; // BYO: user pays, no rate limit
   } else {
@@ -119,6 +123,7 @@ export async function POST(req: Request) {
           : "오늘 무료 사용량을 다 썼습니다. 내일 다시 오거나, ‘고급 설정’에서 본인 API 키를 넣어주세요.";
       return jsonError(msg, 429, { needKey: true });
     }
+    freeIp = ip;
     apiKey = process.env.ANTHROPIC_API_KEY as string;
   }
 
@@ -133,12 +138,17 @@ export async function POST(req: Request) {
       max_tokens: MAX_TOKENS,
       system: `${FRAMEWORK}\n\n${instruction}`,
       messages: [{ role: "user", content: userContent }],
+      // effort is GA on the API; this SDK version only types output_config in
+      // the beta namespace, so pass it with a narrow cast. Revisit on SDK bump.
+      ...({ output_config: { effort: EFFORT } } as object),
     });
     text = msg.content
       .filter((b): b is Anthropic.TextBlock => b.type === "text")
       .map((b) => b.text)
       .join("");
   } catch (err: any) {
+    // Our failure, not the user's — give the free-tier allowance back.
+    if (freeIp) await refundFreeAllowance(freeIp);
     const status = err?.status || 500;
     const msg =
       status === 401 || status === 403
@@ -159,12 +169,16 @@ export async function POST(req: Request) {
     const evaluation = normalizeEvaluation(parsed);
     return Response.json({ data: { ...evaluation, paperWarning: PAPER_WARNING } });
   } catch (e) {
+    // 422 (thin input) is the product working — the user got actionable
+    // feedback, so it counts against quota. A SchemaError 502 is OUR failure:
+    // refund the free call so the visitor doesn't lose allowance to our bug.
     if (e instanceof InsufficientInputError)
       return jsonError(
         "지금 재료로는 당신만의 아이디어를 만들기 어렵습니다. 1단계에서 ‘직접 겪은 문제’나 ‘나만의 접근권’을 더 구체적으로 적어주세요.",
         422,
         { needInventory: true }
       );
+    if (freeIp) await refundFreeAllowance(freeIp);
     return jsonError("결과를 제대로 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.", 502);
   }
 }
