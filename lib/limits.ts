@@ -1,8 +1,15 @@
 import { Redis } from "@upstash/redis";
 
-// Free-tier caps. Conservative defaults keep the bill tiny.
-const PER_IP = Number(process.env.FREE_RUNS_PER_IP_PER_DAY || 5);
-const GLOBAL = Number(process.env.FREE_RUNS_GLOBAL_PER_DAY || 200);
+// Free-tier caps, sized for a low-cost pilot. One full trip through the funnel
+// is 2 AI calls (Step 2 generate + Step 3 evaluate) — capping per-IP at 1 would
+// strand a visitor right at the payoff (Step 3) after they've already invested
+// in Step 1. 2/day covers exactly one real attempt per person per day.
+const PER_IP = Number(process.env.FREE_RUNS_PER_IP_PER_DAY || 2);
+// 40/day * ~$0.03-0.05/call worst case ≈ $1.20-2/day if fully used every single
+// day. The true backstop is the Anthropic monthly spend cap set on the console
+// (see .env.example) — this daily number is a same-day circuit breaker, not the
+// budget itself.
+const GLOBAL = Number(process.env.FREE_RUNS_GLOBAL_PER_DAY || 40);
 
 let _redis: Redis | null | undefined;
 

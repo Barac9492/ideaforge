@@ -22,7 +22,11 @@ type Body = {
 const MAX_INPUT = 5000;
 const MAX_API_KEY = 300; // Anthropic keys are ~108 chars; reject anything absurd
 const MODEL = "claude-sonnet-5"; // official Sonnet id; free and BYO both use it, Opus never exposed
-const MAX_TOKENS = 2200;
+// The evaluate response (4 mistakes + 10 questions w/ notes + 3 signals + verdict,
+// all in Korean) can run 1200-1800 output tokens on its own; 2200 left too little
+// headroom and risked truncation -> wasted paid call. 3500 keeps cost bounded
+// while giving real margin.
+const MAX_TOKENS = 3500;
 
 function getIp(req: Request): string {
   const fwd = req.headers.get("x-forwarded-for");
