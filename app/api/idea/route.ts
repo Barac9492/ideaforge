@@ -8,7 +8,10 @@ import type { Inventory } from "@/lib/store";
 
 export const runtime = "nodejs";
 export const preferredRegion = "icn1"; // Seoul — closest to Korean users
-export const maxDuration = 60;
+// A full Korean 3-idea generation ran past 60s live (Vercel killed it -> 504),
+// and a killed function can't refund the visitor's quota. 180s gives honest
+// headroom; the effort setting below keeps typical latency well under it.
+export const maxDuration = 180;
 
 type Body = {
   mode: "generate" | "evaluate";
@@ -26,10 +29,11 @@ const MODEL = "claude-sonnet-5"; // official Sonnet id; free and BYO both use it
 // omitted, and max_tokens caps thinking + response TEXT COMBINED. 3500 caused
 // live truncation (thinking ate the budget, the Korean JSON got cut mid-object
 // -> SchemaError -> a paid 502). max_tokens is a cap, not a charge — 8000 adds
-// headroom at zero marginal cost; effort "medium" bounds actual thinking spend
-// (Sonnet 5 medium ≈ Sonnet 4.6 high, ample for structured extraction).
+// headroom at zero marginal cost. Effort "low": at medium the live call ran
+// past 60s; Sonnet 5 at low still exceeds prior-generation models at higher
+// tiers, and a visitor won't wait 90s at a spinner. Bump if quality dips.
 const MAX_TOKENS = 8000;
-const EFFORT = "medium" as const;
+const EFFORT = "low" as const;
 
 function getIp(req: Request): string {
   const fwd = req.headers.get("x-forwarded-for");
