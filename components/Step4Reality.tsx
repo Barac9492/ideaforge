@@ -13,6 +13,7 @@ import {
   type ExperimentKind,
   type ResultInputs,
 } from "@/lib/verdict";
+import { funnel } from "@/lib/track";
 import type { View } from "@/lib/nav";
 
 const EMPTY_PC: PreCommit = {
@@ -168,6 +169,7 @@ export default function Step4Reality({ go }: { go: (v: View) => void }) {
         : { completed: Number(completedIn), positives: Number(positivesIn) }),
     };
     persistOut(record);
+    funnel.experimentVerdict(res.verdict);
   }
 
   function reopen() {

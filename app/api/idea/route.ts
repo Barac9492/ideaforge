@@ -7,6 +7,7 @@ import { PAPER_WARNING } from "@/lib/lessons";
 import type { Inventory } from "@/lib/store";
 
 export const runtime = "nodejs";
+export const preferredRegion = "icn1"; // Seoul — closest to Korean users
 export const maxDuration = 60;
 
 type Body = {

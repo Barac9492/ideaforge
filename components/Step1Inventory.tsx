@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import StepHeader from "./StepHeader";
 import { INVENTORY_FIELDS } from "@/lib/lessons";
 import { KEYS, load, save, type Inventory } from "@/lib/store";
+import { funnel } from "@/lib/track";
 import type { View } from "@/lib/nav";
 
 const EMPTY_INV: Inventory = {
@@ -37,6 +38,7 @@ export default function Step1Inventory({ go }: { go: (v: View) => void }) {
   function next() {
     setTouched(true);
     if (!requiredOk) return;
+    funnel.inventorySaved();
     go("step2");
   }
 

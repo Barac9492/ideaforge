@@ -5,6 +5,7 @@ import StepHeader from "./StepHeader";
 import { EMPTY, LABELS, PAPER_WARNING } from "@/lib/lessons";
 import { callIdea, openAdvanced } from "@/lib/api";
 import { KEYS, load, save, type Evaluation, type Inventory } from "@/lib/store";
+import { funnel } from "@/lib/track";
 import type { View } from "@/lib/nav";
 
 type EvalWithWarning = Evaluation & { paperWarning?: string };
@@ -37,6 +38,7 @@ export default function Step3Pressure({ go }: { go: (v: View) => void }) {
     const data = res.data as EvalWithWarning;
     setEvaluation(data);
     save(KEYS.evaluation, data);
+    funnel.pressureTestDone();
   }
 
   if (hydrated && idea.trim() === "") {
@@ -143,7 +145,13 @@ export default function Step3Pressure({ go }: { go: (v: View) => void }) {
             <div className="testnext">
               <span className="tn-label">지금 가장 먼저 확인할 가정</span>
               <p>{evaluation.testNext}</p>
-              <button className="btn primary lg block" onClick={() => go("step4")}>
+              <button
+                className="btn primary lg block"
+                onClick={() => {
+                  funnel.goToRealityCheck();
+                  go("step4");
+                }}
+              >
                 4단계로: 실험 설계하기 →
               </button>
             </div>

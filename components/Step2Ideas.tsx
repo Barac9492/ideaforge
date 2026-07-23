@@ -5,6 +5,7 @@ import StepHeader from "./StepHeader";
 import { ACCESS, EMPTY, INVENTORY_FIELDS } from "@/lib/lessons";
 import { callIdea, openAdvanced } from "@/lib/api";
 import { KEYS, load, save, type Idea, type Inventory } from "@/lib/store";
+import { funnel } from "@/lib/track";
 import type { View } from "@/lib/nav";
 
 const FIELD_LABEL: Record<string, string> = Object.fromEntries(
@@ -51,6 +52,7 @@ export default function Step2Ideas({ go }: { go: (v: View) => void }) {
     const list: Idea[] = res.data?.ideas || [];
     setIdeas(list);
     save(KEYS.ideas, list);
+    funnel.ideasGenerated();
   }
 
   // ── gates ────────────────────────────────────────────────────────────
