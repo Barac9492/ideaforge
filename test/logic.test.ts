@@ -12,6 +12,7 @@ import {
   evaluateResult,
   validatePrecommit,
   isDeadlinePassed,
+  formatOutcomeAudit,
 } from "../lib/verdict.ts";
 import { freeTierConfigured } from "../lib/freetier.ts";
 
@@ -168,6 +169,44 @@ test("threshold must be > 0", () => {
 test("isDeadlinePassed", () => {
   assert.equal(isDeadlinePassed("2026-07-01", TODAY), true);
   assert.equal(isDeadlinePassed("2026-08-01", TODAY), false);
+});
+
+console.log("formatOutcomeAudit (history context):");
+test("interview record renders from its own unit/threshold", () => {
+  const line = formatOutcomeAudit({
+    experiment: "interview",
+    unit: "명",
+    threshold: 6,
+    completed: 10,
+    positives: 8,
+    computed: 8,
+  });
+  assert.equal(line, "완료 10명 · 성공 8명 · 기준 6명");
+  assert.ok(!/  /.test(line)); // no doubled spaces
+});
+test("landing record renders percentage from its own context", () => {
+  const line = formatOutcomeAudit({
+    experiment: "landing",
+    unit: "%",
+    threshold: 10,
+    visitors: 100,
+    signups: 4,
+    computed: 4,
+  });
+  assert.equal(line, "방문 100 · 신청 4 · 전환율 4% · 기준 10%");
+});
+test("a landing record still renders as landing even if 'current' experiment differs", () => {
+  // The bug being fixed: history row must not borrow the current experiment's unit.
+  const landingRow = formatOutcomeAudit({ experiment: "landing", unit: "%", threshold: 10, visitors: 50, signups: 5, computed: 10 });
+  const interviewRow = formatOutcomeAudit({ experiment: "interview", unit: "명", threshold: 6, completed: 10, positives: 7, computed: 7 });
+  assert.match(landingRow, /전환율 10%/);
+  assert.match(interviewRow, /완료 10명/);
+});
+test("backward-compat: old record without experiment/unit is still readable", () => {
+  const legacyInterview = formatOutcomeAudit({ completed: 10, positives: 6, computed: 6 } as any);
+  assert.equal(legacyInterview, "완료 10 · 성공 6 · 기준 -");
+  const legacyLanding = formatOutcomeAudit({ visitors: 100, signups: 3, computed: 3 } as any);
+  assert.equal(legacyLanding, "방문 100 · 신청 3 · 전환율 3% · 기준 -");
 });
 
 console.log("freeTierConfigured (P0-4):");

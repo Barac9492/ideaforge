@@ -7,6 +7,7 @@ import { KEYS, load, save, type Outcome, type PreCommit } from "@/lib/store";
 import {
   EXPERIMENT_META,
   evaluateResult,
+  formatOutcomeAudit,
   isDeadlinePassed,
   validatePrecommit,
   type ExperimentKind,
@@ -155,6 +156,10 @@ export default function Step4Reality({ go }: { go: (v: View) => void }) {
       return;
     }
     const record: Outcome = {
+      experiment: pc.experiment,
+      threshold: pc.threshold,
+      unit: EXPERIMENT_META[pc.experiment].unit,
+      deadline: pc.deadline,
       computed: res.computed,
       verdict: res.verdict,
       decidedAt: nowIso(),
@@ -259,14 +264,16 @@ export default function Step4Reality({ go }: { go: (v: View) => void }) {
                 <p className="locked-tag">🔒 기준 잠금됨 · {fmt(pc.committedAt)}</p>
                 <div style={{ margin: "10px 0 0" }}>
                   <div style={{ marginBottom: 6 }}>
-                    <strong>실험</strong> — {specCopy.name} (표본 {isLanding ? "방문자 기준" : `${sampleTarget}${meta.unit}`})
+                    <strong>실험</strong>
+                    {` — ${specCopy.name} (표본 ${isLanding ? "방문자 기준" : `${sampleTarget}${meta.unit}`})`}
                   </div>
                   <div style={{ marginBottom: 6 }}>
-                    <strong>기준</strong> — {pc.threshold}
-                    {meta.unit} 이상이면 계속
+                    <strong>기준</strong>
+                    {` — ${pc.threshold}${meta.unit} 이상이면 계속`}
                   </div>
                   <div>
-                    <strong>마감</strong> — {pc.deadline}
+                    <strong>마감</strong>
+                    {` — ${pc.deadline}`}
                   </div>
                 </div>
                 {deadlinePassed && (
@@ -368,10 +375,7 @@ export default function Step4Reality({ go }: { go: (v: View) => void }) {
                 <p>{VERDICTS[out.verdict as "계속" | "수정" | "중단"]}</p>
               </div>
               <p style={{ fontSize: 13, color: "var(--ink-faint)", textAlign: "center" }}>
-                {isLanding
-                  ? `방문 ${out.visitors} · 신청 ${out.signups} · 전환율 ${out.computed}% · 기준 ${pc.threshold}%`
-                  : `완료 ${out.completed}${meta.unit} · 성공 ${out.positives}${meta.unit} · 기준 ${pc.threshold}${meta.unit}`}{" "}
-                · {fmt(out.decidedAt)}
+                {formatOutcomeAudit(out)} · {fmt(out.decidedAt)}
               </p>
               <div className="btn-row" style={{ marginTop: 14, justifyContent: "center" }}>
                 <button className="btn ghost" onClick={reopen}>
@@ -392,8 +396,7 @@ export default function Step4Reality({ go }: { go: (v: View) => void }) {
                     </span>
                     <div className="body">
                       <p>
-                        {h.computed}
-                        {isLanding ? "%" : meta.unit} · {fmt(h.decidedAt)}
+                        {formatOutcomeAudit(h)} · {fmt(h.decidedAt)}
                       </p>
                     </div>
                   </div>

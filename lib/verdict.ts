@@ -107,3 +107,34 @@ export function isDeadlinePassed(deadline: string, todayISO: string): boolean {
   if (!deadline) return false;
   return dateOnly(deadline) < dateOnly(todayISO);
 }
+
+// A self-describing outcome record (context captured at decision time).
+export type OutcomeRecord = {
+  experiment?: ExperimentKind;
+  threshold?: number;
+  unit?: string;
+  completed?: number;
+  positives?: number;
+  visitors?: number;
+  signups?: number;
+  computed: number | null;
+};
+
+// Build the audit line from the RECORD's own context, so history stays correct
+// even after the user switches experiment type. Backward-compatible with older
+// records that lack experiment/unit/threshold.
+export function formatOutcomeAudit(o: OutcomeRecord): string {
+  const landing = o.experiment === "landing" || (o.experiment == null && o.visitors != null);
+  const show = (n: number | null | undefined) => (n == null ? "-" : String(n));
+
+  if (landing) {
+    return `방문 ${show(o.visitors)} · 신청 ${show(o.signups)} · 전환율 ${show(o.computed)}% · 기준 ${
+      o.threshold == null ? "-" : `${o.threshold}%`
+    }`;
+  }
+  const unit = o.unit ?? ""; // older records may not know 명/건
+  const withUnit = (n: number | null | undefined) => (n == null ? "-" : `${n}${unit}`);
+  return `완료 ${withUnit(o.completed)} · 성공 ${withUnit(o.positives)} · 기준 ${
+    o.threshold == null ? "-" : `${o.threshold}${unit}`
+  }`;
+}

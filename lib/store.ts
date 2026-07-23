@@ -51,6 +51,11 @@ export type PreCommit = {
 };
 
 export type Outcome = {
+  // experiment context captured at DECISION time (self-describing record)
+  experiment?: ExperimentKind;
+  threshold?: number;
+  unit?: string;
+  deadline?: string;
   // interview/concierge
   completed?: number;
   positives?: number;
