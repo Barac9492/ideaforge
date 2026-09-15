@@ -4,11 +4,19 @@ import { useEffect, useState } from "react";
 import { HERO, STEPS } from "@/lib/lessons";
 import { computeProgress, type Progress } from "@/lib/store";
 import type { View } from "@/lib/nav";
+import { getHomeAction } from "@/lib/home";
 
 export default function Home({ go }: { go: (v: View) => void }) {
   const [p, setP] = useState<Progress>({ step1: false, step2: false, step3: false, step4: false });
 
-  useEffect(() => setP(computeProgress()), []);
+  const [hydrated, setHydrated] = useState(false);
+
+  useEffect(() => {
+    setP(computeProgress());
+    setHydrated(true);
+  }, []);
+
+  const action = hydrated ? getHomeAction(p) : null;
 
   const done = [p.step1, p.step2, p.step3, p.step4];
   // step1,2 always open; 3 needs 2; 4 needs 3.
@@ -19,6 +27,17 @@ export default function Home({ go }: { go: (v: View) => void }) {
       <div className="hero">
         <h1>{HERO.title}</h1>
         <p>{HERO.body}</p>
+        <div className="btn-row">
+          <button
+            type="button"
+            className="btn primary lg"
+            disabled={!action}
+            onClick={() => { if (action) go(action.view); }}
+          >
+            {action ? action.label : "진행 상황 확인 중"}
+          </button>
+        </div>
+        <p>{HERO.accessNote}</p>
       </div>
 
       <div className="map">
