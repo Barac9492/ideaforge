@@ -154,7 +154,13 @@ export default function Shell({
 
       <footer className="foot">
         <div className="wrap">
-          <p className="foot-inner">{FOOTER}</p>
+          <p className="foot-inner">
+            {FOOTER}
+            <br />
+            <a href="https://www.ventureoracle.kr/building/ideaforge">
+              만든 사람: 조여준
+            </a>
+          </p>
         </div>
       </footer>
     </>
