@@ -22,10 +22,33 @@ export const metadata: Metadata = {
   robots: { index: true, follow: true },
 };
 
+// 만든 사람을 VentureOracle의 Person @id로 밝힙니다 (아이디어 2030,
+// 코리아 에이전트 맵과 같은 방식). 저자·리뷰 스키마는 넣지 않습니다.
+const SITE_JSON_LD = {
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  "@id": `${SITE_URL}/#website`,
+  name: "IdeaForge",
+  url: `${SITE_URL}/`,
+  inLanguage: "ko",
+  creator: {
+    "@type": "Person",
+    "@id": "https://www.ventureoracle.kr/about/ethan-cho#person",
+    name: "조여준 Ethan Cho",
+    url: "https://www.ventureoracle.kr/about/ethan-cho",
+  },
+};
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="ko">
       <body>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify(SITE_JSON_LD).replace(/</g, "\\u003c"),
+          }}
+        />
         {children}
         <Analytics />
       </body>

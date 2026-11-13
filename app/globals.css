@@ -217,3 +217,4 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); bo
 /* ── footer ─────────────────────────────────────────────────────────── */
 .foot { border-top: 1px solid var(--line); margin-top: 8px; }
 .foot-inner { padding: 26px 0 40px; color: var(--ink-faint); font-size: 12.5px; line-height: 1.7; max-width: 760px; }
+.foot-inner a { color: inherit; }
